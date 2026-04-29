@@ -1,0 +1,85 @@
+#!/usr/bin/env mksh
+
+set -euo pipefail
+
+
+fatal() {
+(
+typeset -r msg="$1"
+shift
+
+printf 'USER="%s"; DATE="%s"; MSG="%s"' "$USER_ID" "$(date)" "$msg"
+
+while (( $# > 1 )); do
+printf '; %s="%s"' "$1" "$2"
+shift 2
+done
+printf "\n"
+) >&2
+exit 1
+}
+
+
+if (( USER_ID )); then fatal 'this script must be executed as root'; fi
+
+
+nginx_config() {
+typeset -r site="$1"
+typeset -r root="$2"
+typeset -r conf="$(printf "/etc/nginx/sites-available/%s" "$site")"
+
+if [ -d "$conf" ]; then
+fatal 'existing sites-available entry' 'name' "$site"
+fi
+
+cat - <<EOF > "$conf"
+server {
+	server_name $site;
+	root        $root;
+
+	client_max_body_size 8M;
+	send_timeout        540;
+
+	location / {
+	}
+}
+EOF
+}
+
+
+website() {
+typeset -r site="$1"
+typeset -r root="$(printf "/var/www/%s" "$site")"
+shift
+
+if [ -d "$root" ]; then
+fatal 'website root already exists' \
+'name' "$site" \
+'root' "$root"
+fi
+
+nginx_config "$site" "$root"
+
+mkdir -p "$root"
+chown -R nginx:nginx "$root"
+
+if ! nginx -t; then
+fatal 'nginx config test failed, please verify the output' \
+'site' "$site" \
+'root' "$root"
+fi
+
+# this also restarts nginx automatically
+certbot
+
+# copy files from user specified directories if any
+while (( $# > 0 )); do
+typeset -r dir="$(realpath "$1")"
+rsync -av --chown='nginx:nginx' "$dir/" "$root/"
+shift
+done
+}
+
+# === Websites come here ===
+
+website blog.rodrigo.linhazero.com /home/rodrigo/pages/blog
