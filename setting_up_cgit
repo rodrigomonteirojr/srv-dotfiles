@@ -47,12 +47,21 @@ if ! [ -d "$NGX_SITES_AVAILABLE" ]; then mkdir -p "$NGX_SITES_AVAILABLE"; fi
 mkdir -p "$CGIT_SETUP_PATH"
 cd "$CGIT_SETUP_PATH"
 
+# TODO: setup cache
 curl -OL https://git.zx2c4.com/cgit/snapshot/cgit-1.3.tar.xz -o cgit-1.3.tar.xz
 tar -xf cgit-1.3.tar.xz 
 cd cgit-1.3
 make get-git
 make -j 4
 make install CGIT_SCRIPT_PATH="$CGIT_SCRIPT_PATH"
+
+# these defaults are not really optimal
+cat - <<EOF > /etc/cgitrc
+enable-git-config=1
+enable-http-clone=0
+robots=noindex, nofollow
+scan-path=/srv/git/
+EOF
 
 if ! [ -d "/srv/git" ]; then mkdir -p '/srv/git'; fi
 
