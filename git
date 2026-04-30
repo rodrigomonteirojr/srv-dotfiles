@@ -29,6 +29,8 @@ if (( USER_ID )); then fatal 'this script must be executed as root'; fi
 
 
 GIT_ROOT='/srv/git'
+GIT_PASSWORD_PATH='/etc/nginx/.gitpasswd'
+
 
 new() {
 typeset -r repo="$GIT_ROOT/$1.git"
@@ -47,6 +49,12 @@ EOF
 git config -f "$repo/config" gitweb.owner "Rodrigo"
 }
 
+
+account() {
+htpasswd -c "$GIT_PASSWORD_PATH" "$1"
+}
+
+
 # no single argument options
 if (( $# > 1 )); then
 typeset -r opt="$1"
@@ -55,6 +63,9 @@ shift
 case "$opt" in
 -n)
 new "$@"
+;;
+-a)
+account "$@"
 ;;
 esac
 fi
