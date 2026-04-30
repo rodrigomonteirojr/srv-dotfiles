@@ -141,4 +141,4 @@ return 0
 # * website: defines an entry, copying files from [ directories ... ]
 # * down:    non-destructively removes an entry
 
-website blog.rodrigo.linhazero.com /home/rodrigo/blog
+# website blog.rodrigo.linhazero.com /home/rodrigo/blog
