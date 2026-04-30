@@ -1,0 +1,67 @@
+#!/usr/bin/env mksh
+
+set -euo pipefail
+
+error_msg() {
+(
+typeset -r msg="$1"
+shift
+
+printf 'USER="%s"; DATE="%s"; MSG="%s"' "$USER_ID" "$(date)" "$msg"
+
+while (( $# > 1 )); do
+printf '; %s="%s"' "$1" "$2"
+shift 2
+done
+printf "\n"
+) >&2
+}
+
+
+fatal() {
+error_msg "$@"
+exit 1
+}
+
+
+if (( USER_ID )); then fatal 'this script must be executed as root'; fi
+
+
+dnf install fcgiwrap
+
+original_dir="$PWD"
+
+mkdir -p '/root/_fcgiwrap_installation'
+cd '/root/_fcgiwrap_installation' || fatal 'failed to change directory'
+
+curl 'https://download.lighttpd.net/spawn-fcgi/releases-1.6.x/spawn-fcgi-1.6.6.tar.xz' -o spawn-fcgi.tar.xz
+tar -xf spawn-fcgi.tar.xz
+
+pip install ninja
+pip install meson
+
+cd spawn-fcgi-1.6.6
+meson setup build --prefix /usr/local/
+meson compile -C build
+meson install -C build
+
+cat - <<EOF > cgi.service
+[Unit]
+Description=Spawn FastCGI for fcgiwrap
+After=network.target
+
+[Service]
+Type=forking
+PIDFile=/run/cgi.pid
+
+ExecStart=/usr/local/bin/spawn-fcgi -s /run/cgi.socket -P /run/cgi.pid -u nginx -g nginx -U nginx -G nginx -M 0660 -- /usr/sbin/fcgiwrap
+
+Restart=on-failure
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+systemctl link ./cgi.service
+systemctl daemon-reload
+systemctl enable --now cgi.service
