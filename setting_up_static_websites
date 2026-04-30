@@ -44,14 +44,16 @@ typeset -r root="$2"
 typeset -r site_available="$NGX_SITES_AVAILABLE/$site"
 typeset -r site_enabled="$NGX_SITES_ENABLED/$site"
 
-if [ -f "$site_available" ]; then
-fatal 'existing sites-available entry' 'site' "$site"
-fi
-
+# we do not want to disrupt existing, probably working services
 if [ -L "$site_enabled" ]; then
-fatal 'existing symlink to site' 'site' "$site"
+fatal 'existing sites-enabled symlink to site' 'site' "$site"
 fi
 
+# our setup is very simple, i think letting scripts override it
+# by defining first is a justifiable "feature"
+if [ -f "$site_available" ]; then
+error_log 'warning: existing sites-available entry, ignoring it' 'site' "$site"
+else
 cat - <<EOF > "$site_available"
 server {
 	server_name $site;
@@ -66,6 +68,7 @@ server {
 EOF
 
 ln -s "$site_available" "$site_enabled"
+fi
 }
 
 
