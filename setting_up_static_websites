@@ -83,9 +83,16 @@ mkdir -p "$root"
 chown -R 'nginx:nginx' "$root"
 
 # copy files from user specified directories if any
+typeset site_contents
 while (( $# > 0 )); do
-typeset -r site_content="$(realpath "$1")"
-rsync -av --chown='nginx:nginx' "$site_content/" "$root/"
+site_contents="$(realpath "$1")"
+if ! [ -d "$site_contents" ]; then
+fatal 'specified site contents directory does not exist or is not a directory' \
+'site' "$site" \
+'directory' "$site_contents"
+fi
+
+rsync -av --chown='nginx:nginx' "$(realpath "$1")/" "$root/"
 shift
 done
 fi
@@ -93,7 +100,7 @@ fi
 ngx_config "$site" "$root"
 
 if ! nginx -t; then
-fatal 'ngx config test failed, please verify the output' \
+fatal 'nginx config test failed, please verify the output' \
 'site' "$site" \
 'root' "$root"
 fi
