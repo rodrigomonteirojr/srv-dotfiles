@@ -3,7 +3,7 @@
 set -euo pipefail
 
 
-fatal() {
+error_msg() {
 (
 typeset -r msg="$1"
 shift
@@ -16,6 +16,11 @@ shift 2
 done
 printf "\n"
 ) >&2
+}
+
+
+fatal() {
+error_msg "$@"
 exit 1
 }
 
@@ -25,8 +30,8 @@ if (( USER_ID )); then fatal 'this script must be executed as root'; fi
 
 WEBROOT='/var/www'
 NGX_ROOT='/etc/nginx'
-NGX_SITES_AVAILABLE='/etc/nginx/sites-available"
-NGX_SITES_ENABLED='/etc/nginx/sites-enabled"
+NGX_SITES_AVAILABLE='/etc/nginx/sites-available'
+NGX_SITES_ENABLED='/etc/nginx/sites-enabled'
 
 if ! [ -d "$NGX_SITES_AVAILABLE" ]; then mkdir -p "$NGX_SITES_AVAILABLE"; fi
 if ! [ -d "$NGX_SITES_ENABLED" ]; then mkdir -p "$NGX_SITES_ENABLED"; fi
@@ -70,15 +75,22 @@ typeset -r root="$WEBROOT/$site"
 shift
 
 if [ -d "$root" ]; then
-fatal 'website root already exists' \
+error_msg 'warning: website root already exists, ignoring it.' \
 'name' "$site" \
 'root' "$root"
+else
+mkdir -p "$root"
+chown -R 'nginx:nginx' "$root"
+
+# copy files from user specified directories if any
+while (( $# > 0 )); do
+typeset -r site_content="$(realpath "$1")"
+rsync -av --chown='nginx:nginx' "$site_content/" "$root/"
+shift
+done
 fi
 
 ngx_config "$site" "$root"
-
-mkdir -p "$root"
-chown -R 'nginx:nginx' "$root"
 
 if ! nginx -t; then
 fatal 'ngx config test failed, please verify the output' \
@@ -90,13 +102,6 @@ fi
 if ! certbot; then
 fatal 'certbot failed to run, please verify the output'
 fi
-
-# copy files from user specified directories if any
-while (( $# > 0 )); do
-typeset -r site_content="$(realpath "$1")"
-rsync -av --chown='nginx:nginx' "$site_content/" "$root/"
-shift
-done
 }
 
 # cleanup a possibly dirty website installation
@@ -107,11 +112,26 @@ typeset -r root="$WEBROOT/$site"
 typeset -r enabled_site="$NGX_SITES_ENABLED/$site"
 typeset -r available_site="$NGX_SITES_AVAILABLE/$site"
 
-[ -d "$root" ] && rmdir "$root"
+if [ -d "$root" ]; then
+rmdir "$root" || \
+error_msg \
+'website root exists and is not an empty directory, '\
+'please verify the directory to avoid losing data' \
+'site' "$site" \
+'root' "$root"
+fi
+
 [ -L "$enabled_site" ] && rm "$enabled_site"
 [ -f "$available_site" ] && rm "$available_site"
 
 return 0
 }
+
+# === Websites come here ===
+
+# ( website / down ) ( entry ) [ directories ... ]
+#
+# * website: defines an entry, copying files from [ directories ... ]
+# * down:    non-destructively removes an entry
 
 website blog.rodrigo.linhazero.com /home/rodrigo/blog
