@@ -34,6 +34,8 @@ CGIT_SETUP_PATH='/root/_cgit_setup'
 CGIT_SCRIPT_PATH="$WEBROOT/forgejo.linhazero.com"
 CGIT_DOMAIN_NAME='forgejo.linhazero.com'
 
+GIT_PASSWORD_PATH='/etc/nginx/.gitpasswd'
+
 if [ -d "$CGIT_SETUP_PATH" ]; then
 error_msg "warning: existing cgit setup, will try to start over" \
 'setup_dir' "$CGIT_SETUP_PATH"
@@ -83,13 +85,17 @@ server {
 	try_files             \$uri @cgit;
 
 	# Configure HTTP transport
-	location ~ /.+/(info/refs|git-upload-pack) {
+	location ~ /.+/(info/refs|git-upload-pack|git-receive-pack) {
+		auth_basic "git";
+		auth_basic_user_file $GIT_PASSWORD_PATH;
+
 		include             fastcgi_params;
 		fastcgi_param       SCRIPT_FILENAME     /usr/libexec/git-core/git-http-backend;
 		fastcgi_param       PATH_INFO           \$uri;
 		fastcgi_param       GIT_HTTP_EXPORT_ALL 1;
 		fastcgi_param       GIT_PROJECT_ROOT    /srv/git;
 		fastcgi_param       HOME                /srv/git;
+		fastcgi_param       REMOTE_USER         \$remote_user;
 		fastcgi_pass        unix:/run/cgi.socket;
 	}
 
