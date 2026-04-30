@@ -1,0 +1,99 @@
+#!/usr/bin/env mksh
+
+set -euo pipefail
+
+
+error_msg() {
+(
+typeset -r msg="$1"
+shift
+
+printf 'USER="%s"; DATE="%s"; MSG="%s"' "$USER_ID" "$(date)" "$msg"
+
+while (( $# > 1 )); do
+printf '; %s="%s"' "$1" "$2"
+shift 2
+done
+printf "\n"
+) >&2
+}
+
+
+fatal() {
+error_msg "$@"
+exit 1
+}
+
+
+if (( USER_ID )); then fatal 'this script must be executed as root'; fi
+
+
+WEBROOT='/var/www'
+
+CGIT_SETUP_PATH='/root/_cgit_setup'
+CGIT_SCRIPT_PATH="$WEBROOT/forgejo.linhazero.com"
+CGIT_DOMAIN_NAME='forgejo.linhazero.com'
+
+if [ -d "$CGIT_SETUP_PATH" ]; then
+error_msg "warning: existing cgit setup, will try to start over" \
+'setup_dir' "$CGIT_SETUP_PATH"
+rm -I -r "$CGIT_SETUP_PATH"
+fi
+
+NGX_SITES_AVAILABLE='/etc/nginx/sites-available'
+
+if ! [ -d "$NGX_SITES_AVAILABLE" ]; then mkdir -p "$NGX_SITES_AVAILABLE"; fi
+
+mkdir -p "$CGIT_SETUP_PATH"
+cd "$CGIT_SETUP_PATH"
+
+curl -OL https://git.zx2c4.com/cgit/snapshot/cgit-1.3.tar.xz -o cgit-1.3.tar.xz
+tar -xf cgit-1.3.tar.xz 
+cd cgit-1.3
+make get-git
+make -j 4
+make install CGIT_SCRIPT_PATH="$CGIT_SCRIPT_PATH"
+
+if ! [ -d "/srv/git" ]; then mkdir -p '/srv/git'; fi
+
+# use a global directory reference instead
+git clone https://github.com/rodrigomonteirojr/srv-dotfiles
+cd srv-dotfiles
+
+cat - <<EOF >> setting_up_static_websites
+website "$CGIT_DOMAIN_NAME"
+EOF
+
+if ! systemctl is-active --quiet cgi; then ./setting_up_cgi; fi
+
+cat - <<EOF > "$NGX_SITES_AVAILABLE/$CGIT_DOMAIN_NAME"
+# Cgit
+server {
+	server_name           $CGIT_DOMAIN_NAME;
+	root                  $CGIT_SCRIPT_PATH;
+	try_files             \$uri @cgit;
+
+	# Configure HTTP transport
+	location ~ /.+/(info/refs|git-upload-pack) {
+		include             fastcgi_params;
+		fastcgi_param       SCRIPT_FILENAME     /usr/libexec/git-core/git-http-backend;
+		fastcgi_param       PATH_INFO           \$uri;
+		fastcgi_param       GIT_HTTP_EXPORT_ALL 1;
+		fastcgi_param       GIT_PROJECT_ROOT    /srv/git;
+		fastcgi_param       HOME                /srv/git;
+		fastcgi_pass        unix:/run/cgi.socket;
+	}
+
+	location @cgit {
+		include             fastcgi_params;
+		fastcgi_param       SCRIPT_FILENAME $CGIT_SCRIPT_PATH/cgit.cgi;
+		fastcgi_param       PATH_INFO       \$uri;
+		fastcgi_param       QUERY_STRING    \$args;
+		fastcgi_param       HTTP_HOST       \$server_name;
+		fastcgi_pass        unix:/run/cgi.socket;
+	}
+}
+EOF
+
+chmod +x ./setting_up_static_websites
+./setting_up_static_websites
