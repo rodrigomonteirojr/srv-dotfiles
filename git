@@ -1,0 +1,60 @@
+#!/usr/bin/env mksh
+
+set -euo pipefail
+
+
+error_msg() {
+(
+typeset -r msg="$1"
+shift
+
+printf 'USER="%s"; DATE="%s"; MSG="%s"' "$USER_ID" "$(date)" "$msg"
+
+while (( $# > 1 )); do
+printf '; %s="%s"' "$1" "$2"
+shift 2
+done
+printf "\n"
+) >&2
+}
+
+
+fatal() {
+error_msg "$@"
+exit 1
+}
+
+
+if (( USER_ID )); then fatal 'this script must be executed as root'; fi
+
+
+GIT_ROOT='/srv/git'
+
+new() {
+typeset -r repo="$GIT_ROOT/$1.git"
+shift
+
+mkdir -p "$repo"
+cd "$repo" || fatal 'could not change to repository directory' 'repo' "$repo"
+
+git init --bare
+chown -R 'nginx:nginx' "$repo"
+
+cat - <<EOF > "$repo/description"
+Blank project
+EOF
+
+git config -f "$repo/config" gitweb.owner "Rodrigo"
+}
+
+# no single argument options
+if (( $# > 1 )); then
+typeset -r opt="$1"
+shift
+
+case "$opt" in
+-n)
+new "$@"
+;;
+esac
+fi
