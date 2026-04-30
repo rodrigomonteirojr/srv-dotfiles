@@ -23,16 +23,31 @@ exit 1
 if (( USER_ID )); then fatal 'this script must be executed as root'; fi
 
 
-nginx_config() {
+WEBROOT='/var/www'
+NGX_ROOT='/etc/nginx'
+NGX_SITES_AVAILABLE='/etc/nginx/sites-available"
+NGX_SITES_ENABLED='/etc/nginx/sites-enabled"
+
+if ! [ -d "$NGX_SITES_AVAILABLE" ]; then mkdir -p "$NGX_SITES_AVAILABLE"; fi
+if ! [ -d "$NGX_SITES_ENABLED" ]; then mkdir -p "$NGX_SITES_ENABLED"; fi
+
+
+ngx_config() {
 typeset -r site="$1"
 typeset -r root="$2"
-typeset -r conf="$(printf "/etc/nginx/sites-available/%s" "$site")"
 
-if [ -d "$conf" ]; then
-fatal 'existing sites-available entry' 'name' "$site"
+typeset -r site_available="$NGX_SITES_AVAILABLE/$site"
+typeset -r site_enabled="$NGX_SITES_ENABLED/$site"
+
+if [ -f "$site_available" ]; then
+fatal 'existing sites-available entry' 'site' "$site"
 fi
 
-cat - <<EOF > "$conf"
+if [ -L "$site_enabled" ]; then
+fatal 'existing symlink to site' 'site' "$site"
+fi
+
+cat - <<EOF > "$site_available"
 server {
 	server_name $site;
 	root        $root;
@@ -44,12 +59,14 @@ server {
 	}
 }
 EOF
+
+ln -s "$site_available" "$site_enabled"
 }
 
 
 website() {
 typeset -r site="$1"
-typeset -r root="$(printf "/var/www/%s" "$site")"
+typeset -r root="$WEBROOT/$site"
 shift
 
 if [ -d "$root" ]; then
@@ -58,28 +75,43 @@ fatal 'website root already exists' \
 'root' "$root"
 fi
 
-nginx_config "$site" "$root"
+ngx_config "$site" "$root"
 
 mkdir -p "$root"
-chown -R nginx:nginx "$root"
+chown -R 'nginx:nginx' "$root"
 
 if ! nginx -t; then
-fatal 'nginx config test failed, please verify the output' \
+fatal 'ngx config test failed, please verify the output' \
 'site' "$site" \
 'root' "$root"
 fi
 
-# this also restarts nginx automatically
-certbot
+# this also restarts ngx automatically
+if ! certbot; then
+fatal 'certbot failed to run, please verify the output'
+fi
 
 # copy files from user specified directories if any
 while (( $# > 0 )); do
-typeset -r dir="$(realpath "$1")"
-rsync -av --chown='nginx:nginx' "$dir/" "$root/"
+typeset -r site_content="$(realpath "$1")"
+rsync -av --chown='nginx:nginx' "$site_content/" "$root/"
 shift
 done
 }
 
-# === Websites come here ===
+# cleanup a possibly dirty website installation
+down() {
+typeset -r site="$1"
+typeset -r root="$WEBROOT/$site"
 
-website blog.rodrigo.linhazero.com /home/rodrigo/pages/blog
+typeset -r enabled_site="$NGX_SITES_ENABLED/$site"
+typeset -r available_site="$NGX_SITES_AVAILABLE/$site"
+
+[ -d "$root" ] && rmdir "$root"
+[ -L "$enabled_site" ] && rm "$enabled_site"
+[ -f "$available_site" ] && rm "$available_site"
+
+return 0
+}
+
+website blog.rodrigo.linhazero.com /home/rodrigo/blog
